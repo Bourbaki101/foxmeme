@@ -1,0 +1,6 @@
+[
+  {"id":"deal_glasses","name":"Deal with it","file":"deal_glasses.png","tracking_mode":"eyes","duration":0,"scale":2.5,"rotation_mode":"face","anchor":"center"},
+  {"id":"approved","name":"Approved","file":"approved.png","duration":2,"scale":0.5},
+  {"id":"rejected","name":"Rejected","file":"rejected.png","duration":2,"scale":0.5},
+  {"id":"reaction","name":"Bruh / Reaction","file":"reaction.png","duration":2,"scale":0.4}
+]

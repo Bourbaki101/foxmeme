@@ -1,0 +1,18 @@
+{
+  "camera": 0,
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "hands": true,
+  "face": true,
+  "debug": false,
+  "mirror": true,
+  "confirmation": 0.35,
+  "release": 0.25,
+  "cooldown": 0.8,
+  "smoothing": 0.3,
+  "face_hold": 0.2,
+  "detection_width": 640,
+  "borderless": false,
+  "fullscreen": false
+}

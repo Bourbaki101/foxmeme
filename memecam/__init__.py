@@ -1,0 +1,1 @@
+"""MemeCam local video effects."""

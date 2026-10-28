@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+logs/
+config/settings.json
+assets/models/*.task
+artifacts/
+.tmp/
+*.lnk
+.env
+.env.*
+!.env.example

@@ -1,0 +1,7 @@
+{
+  "peace": {"action": "toggle_overlay", "overlay": "deal_glasses"},
+  "thumbs_up": {"action": "show_overlay", "overlay": "approved"},
+  "thumbs_down": {"action": "show_overlay", "overlay": "rejected"},
+  "open_palm": {"action": "show_overlay", "overlay": "reaction"},
+  "fist": {"action": "clear_overlays"}
+}
