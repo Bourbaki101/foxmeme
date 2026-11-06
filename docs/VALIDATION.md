@@ -1,5 +1,14 @@
 # Validation on 2026-10-26
 
+## Reaction editor update · 2026-11-06
+
+- Full automated suite: **68 passed**. The new editor checks cover upload through the visible button, preview without importing, persistent placement and alpha, cancel/invalid input without orphan files, editing without changing IDs/links, linking the selected image to a new expression, and live preview face loss without modifying source frames.
+- The existing worker fixture now also checks delivery of an uncomposited preview frame and face pose while editing, and removal of the extra frame when the editor closes. It uses a fake camera and face tracker.
+- Ruff and Python byte-compilation passed. Native Windows Qt renders were inspected for the main studio at normal/minimum sizes, image editor and expression assistant. The Qt offscreen backend on this machine lacks usable text rendering, so visual inspection used the Windows backend.
+- No new physical-camera recognition, OBS session or frozen EXE acceptance is claimed by this update. Use the new visual editor checklist in `MANUAL_TESTS.md` for hands-on acceptance.
+
+## Original environment validation
+
 Environment: Windows x64, bundled CPython 3.12.14, MediaPipe Tasks 0.10.21, OpenCV contrib 4.11.0.86, NumPy 1.26.4, PySide6 6.12.0. Full installed versions are in `requirements-lock.txt` (the lock records this Windows/Python 3.12 environment; use `pyproject.toml` for other supported environments).
 
 ## Commands and observed results

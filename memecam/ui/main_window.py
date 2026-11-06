@@ -1,10 +1,9 @@
 import logging
-from pathlib import Path
 from PySide6.QtCore import QTimer, QSize, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QGroupBox, QProgressBar, QFileDialog, QMessageBox, QScrollArea,
-    QDialog, QFormLayout, QLineEdit, QDoubleSpinBox, QDialogButtonBox, QTabWidget, QToolButton)
+    QComboBox, QCheckBox, QGroupBox, QProgressBar, QScrollArea,
+    QFormLayout, QTabWidget, QToolButton, QMenu)
 from memecam.camera.camera_manager import CameraDiscovery
 from memecam.camera.pipeline import Pipeline
 from memecam.config.settings import ROOT, write_json
@@ -15,9 +14,10 @@ from memecam.gestures.facial import load_rules
 LOG = logging.getLogger(__name__)
 STYLE = """
 QWidget { color:#e9e9ed; font-family:'Segoe UI'; font-size:13px; }
-QMainWindow, QDialog { background:#101114; }
+QMainWindow, QDialog { background:#101216; }
 QLabel { background:transparent; }
 QLabel#brand { font-size:24px; font-weight:700; letter-spacing:-1px; }
+QLabel#hero { font-size:25px; font-weight:600; letter-spacing:-1px; }
 QLabel#eyebrow { color:#777b87; font-size:11px; font-weight:600; letter-spacing:2px; }
 QLabel#section { font-size:16px; font-weight:600; }
 QLabel#subtle { color:#9295a1; font-size:12px; }
@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
         self.settings, self.assets, self.mappings = settings, assets, mappings
         self.pipeline = None
         self.face_setup = None
+        self.reaction_editor = None
         try:
             self.facial_rules = load_rules(ROOT / "config/facial_gestures.json", assets.images)
         except ValueError as exc:
@@ -84,7 +85,7 @@ class MainWindow(QMainWindow):
         self.camera_blocked = False
         self.demo = demo
         self.output = OutputWindow()
-        self.setWindowTitle("MemeCam — Gesture Studio")
+        self.setWindowTitle("MemeCam — Tu estudio de reacciones")
         self.resize(1240, 820)
         self.setMinimumSize(960, 700)
         self.setStyleSheet(STYLE)
@@ -100,7 +101,7 @@ class MainWindow(QMainWindow):
         brand = QLabel("memecam")
         brand.setObjectName("brand")
         identity.addWidget(brand)
-        subtitle = QLabel("GESTURE STUDIO")
+        subtitle = QLabel("REACTION STUDIO")
         subtitle.setObjectName("eyebrow")
         identity.addWidget(subtitle)
         header.addLayout(identity)
@@ -109,14 +110,26 @@ class MainWindow(QMainWindow):
         self.live.setObjectName("live")
         header.addWidget(self.live)
         header.addSpacing(12)
-        self.start_button = button("Start Camera", self.start_camera, True)
+        self.upload_button = button("+ Subir mi imagen", self.add_overlay, True)
+        header.addWidget(self.upload_button)
+        self.start_button = button("Encender cámara", self.start_camera)
         self.stop_button = button("Stop", self.stop_camera)
         self.stop_button.setEnabled(False)
         self.stop_button.setVisible(False)
         header.addWidget(self.start_button)
         header.addWidget(self.stop_button)
-        header.addWidget(button("Open Output ↗", self.open_output))
+        header.addWidget(button("Salida OBS ↗", self.open_output))
         root.addLayout(header)
+
+        introduction = QVBoxLayout()
+        introduction.setSpacing(4)
+        headline = QLabel("Reacciona a tu manera.")
+        headline.setObjectName("hero")
+        introduction.addWidget(headline)
+        description = QLabel("Sube tu imagen. Ponla sobre tu rostro. Dale vida con una expresión.")
+        description.setObjectName("subtle")
+        introduction.addWidget(description)
+        root.addLayout(introduction)
 
         body = QHBoxLayout()
         body.setSpacing(20)
@@ -126,15 +139,15 @@ class MainWindow(QMainWindow):
         stage_layout.setContentsMargins(16, 14, 16, 12)
         stage_layout.setSpacing(12)
         stage_header = QHBoxLayout()
-        title = QLabel("Preview")
+        title = QLabel("Tu escenario")
         title.setObjectName("section")
         stage_header.addWidget(title)
         stage_header.addStretch()
-        note = QLabel("Your live canvas")
+        note = QLabel("Todo sucede en tu equipo")
         note.setObjectName("subtle")
         stage_header.addWidget(note)
         stage_layout.addLayout(stage_header)
-        self.preview = VideoWidget("Ready when you are.\n\nChoose your camera in Settings, then start.")
+        self.preview = VideoWidget("Tu próxima reacción empieza aquí.\n\nEnciende la cámara y sube tu propia imagen.")
         stage_layout.addWidget(self.preview, 1)
         self.metrics = QLabel("Camera idle")
         self.metrics.setObjectName("subtle")
@@ -142,17 +155,28 @@ class MainWindow(QMainWindow):
         body.addWidget(stage, 1)
 
         self.inspector = QTabWidget()
-        self.inspector.setFixedWidth(288)
+        self.inspector.setFixedWidth(304)
         self.inspector.setDocumentMode(True)
         gesture_page = QWidget()
         gesture_page.setObjectName("tabPage")
         gestures_layout = QVBoxLayout(gesture_page)
         gestures_layout.setContentsMargins(18, 22, 18, 18)
         gestures_layout.setSpacing(8)
-        title = QLabel("Make a move")
+        title = QLabel("Hazla tuya")
         title.setObjectName("section")
         gestures_layout.addWidget(title)
-        hint = QLabel(f"Hold for {settings['confirmation']:.2f}s, then release.")
+        welcome = QLabel("Tu foto, meme o sticker siguiendo tu rostro. Listo en tres pasos.")
+        welcome.setWordWrap(True)
+        welcome.setObjectName("subtle")
+        gestures_layout.addWidget(welcome)
+        gestures_layout.addWidget(button("+ Crear mi reacción", self.add_overlay, True))
+        steps = QLabel("01  Sube una imagen\n02  Elige rostro, ojos o pantalla\n03  Guarda y úsala con un clic")
+        steps.setStyleSheet("color:#c4c9d3; padding:12px 0;")
+        gestures_layout.addWidget(steps)
+        guide = QLabel("También puedes usar tus manos")
+        guide.setObjectName("section")
+        gestures_layout.addWidget(guide)
+        hint = QLabel(f"Mantén el gesto {settings['confirmation']:.2f}s y suelta.")
         hint.setObjectName("subtle")
         gestures_layout.addWidget(hint)
         self.gesture_labels = {}
@@ -178,7 +202,7 @@ class MainWindow(QMainWindow):
         self.face_status = QLabel("Facial: —")
         self.face_status.setObjectName("subtle")
         self.face_status.setWordWrap(True)
-        setup = button("Configure facial gestures ↗", self.open_face_setup)
+        setup = button("Activar con mi expresión →", self.open_face_setup)
         setup.setToolTip("Configurar gestos faciales")
 
         settings_page = QWidget()
@@ -248,7 +272,7 @@ class MainWindow(QMainWindow):
         self.fullscreen.toggled.connect(self.output_mode)
         settings_layout.addWidget(output_group)
         settings_layout.addStretch()
-        for page, title in ((gesture_page, "Gestures"), (settings_page, "Settings")):
+        for page, title in ((gesture_page, "Mi estudio"), (settings_page, "Ajustes")):
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -267,21 +291,22 @@ class MainWindow(QMainWindow):
         library_layout.setContentsMargins(16, 14, 16, 12)
         library_layout.setSpacing(10)
         library_header = QHBoxLayout()
-        title = QLabel("Effects")
+        self.library_title = QLabel("Tu biblioteca")
+        title = self.library_title
         title.setObjectName("section")
         library_header.addWidget(title)
-        hint = QLabel("Click to trigger")
+        hint = QLabel("Clic para mostrar · Editar debajo")
         hint.setObjectName("subtle")
         library_header.addWidget(hint)
         library_header.addStretch()
-        clear = button("Clear all", self.clear_overlays)
+        clear = button("Quitar todas", self.clear_overlays)
         clear.setObjectName("quiet")
         library_header.addWidget(clear)
-        library_header.addWidget(button("+ Add effect", self.add_overlay))
+        library_header.addWidget(button("+ Subir imagen", self.add_overlay, True))
         library_layout.addLayout(library_header)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setFixedHeight(110)
+        scroll.setFixedHeight(144)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         container = QWidget()
         self.library_layout = QHBoxLayout(container)
@@ -291,7 +316,7 @@ class MainWindow(QMainWindow):
         library_layout.addWidget(scroll)
         root.addWidget(library)
         self.refresh_library()
-        self.message = QLabel(warning or "Ready · Open Output to connect with OBS")
+        self.message = QLabel(warning or "Empieza con + Subir mi imagen · PNG, JPG o WebP desde tu computadora")
         self.message.setWordWrap(True)
         self.message.setObjectName("subtle")
         root.addWidget(self.message)
@@ -355,6 +380,8 @@ class MainWindow(QMainWindow):
         self.pipeline = Pipeline(self.settings, self.assets, self.mappings, self.facial_rules)
         if self.face_setup:
             self.pipeline.command("setup", True)
+        if self.reaction_editor:
+            self.pipeline.command("preview", True)
         self.pipeline.error.connect(self.pipeline_error)
         self.pipeline.ready.connect(self.camera_ready)
         self.pipeline.finished.connect(self.camera_finished)
@@ -395,6 +422,8 @@ class MainWindow(QMainWindow):
         self.output.clear()
         if self.face_setup:
             self.face_setup.clear_live()
+        if self.reaction_editor:
+            self.reaction_editor.clear_live()
         self.face_status.setText("Facial: —")
         self.progress.setValue(0)
         self.metrics.setText("Camera idle")
@@ -404,6 +433,7 @@ class MainWindow(QMainWindow):
         self.stopping = False
 
     def refresh_library(self):
+        self.library_title.setText(f"Tu biblioteca · {len(self.assets.items)}")
         while self.library_layout.count():
             widget = self.library_layout.takeAt(0).widget()
             if widget:
@@ -417,57 +447,57 @@ class MainWindow(QMainWindow):
             tile.setIconSize(QSize(88, 44))
             tile.setFixedSize(144, 88)
             tile.setToolTip(f"{item.tracking_mode} · {'persistent' if not item.duration else str(item.duration)+'s'}")
-            self.library_layout.addWidget(tile)
+            tile.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            tile.customContextMenuRequested.connect(lambda pos, key=item.id: self.reaction_menu(key))
+            tile.mouseDoubleClickEvent = lambda event, key=item.id: self.edit_reaction(key)
+            card = QWidget()
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(0, 0, 0, 0)
+            card_layout.setSpacing(4)
+            card_layout.addWidget(tile)
+            edit = button("Editar / vincular", lambda checked=False, key=item.id: self.edit_reaction(key))
+            edit.setObjectName("quiet")
+            edit.setFixedWidth(144)
+            edit.setStyleSheet("padding:4px; font-size:11px;")
+            card_layout.addWidget(edit)
+            self.library_layout.addWidget(card)
         self.library_layout.addStretch()
 
     def trigger(self, identifier):
         if self.pipeline and self.pipeline.isRunning() and not self.stopping:
             self.pipeline.command("trigger", identifier)
         else:
-            self.message.setText("Start the camera to trigger overlays.")
+            self.message.setText("Enciende la cámara para mostrar tu reacción. Doble clic en la tarjeta para editarla.")
 
     def clear_overlays(self):
         if self.pipeline and self.pipeline.isRunning():
             self.pipeline.command("clear")
 
     def add_overlay(self):
-        filename, _ = QFileDialog.getOpenFileName(self, "Add image", "", "Images (*.png *.jpg *.jpeg *.webp)")
-        if not filename:
-            return
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Add Overlay")
-        layout = QFormLayout(dialog)
-        name = QLineEdit(Path(filename).stem)
-        tracking = QComboBox()
-        tracking.addItems(["screen", "eyes", "face"])
-        tracking.setCurrentText("face")
-        duration = QDoubleSpinBox()
-        duration.setRange(0, 60)
-        duration.setValue(2)
-        duration.setSpecialValueText("Persistent until cleared")
-        layout.addRow("Name", name)
-        layout.addRow("Tracking", tracking)
-        layout.addRow("Duration (seconds)", duration)
-        hint = QLabel("Click the library tile to trigger manually.\nUse Configurar gestos faciales to link an expression and adjust placement.")
-        layout.addRow(hint)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addRow(buttons)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        try:
-            if not name.text().strip():
-                raise ValueError("Please provide an overlay name")
-            item = self.assets.add(Path(filename), name.text().strip(), tracking.currentText(), duration.value())
+        self.edit_reaction()
+
+    def edit_reaction(self, identifier=None):
+        if self.reaction_editor is None:
+            from memecam.ui.reaction_editor import ReactionEditor
+            item = next((v for v in self.assets.items if v.id == identifier), None)
+            self.reaction_editor = ReactionEditor(self, item)
             if self.pipeline and self.pipeline.isRunning():
-                self.pipeline.command("register", item, self.assets.images[item.id])
-            self.refresh_library()
-            if self.face_setup:
-                self.face_setup.refresh_overlays()
-            self.message.setText(f"Added {item.name}. Click its library tile to trigger.")
-        except (ValueError, OSError) as exc:
-            QMessageBox.warning(self, "Cannot add overlay", str(exc))
+                self.pipeline.command("preview", True)
+        self.reaction_editor.show()
+        self.reaction_editor.raise_()
+        self.reaction_editor.activateWindow()
+
+    def reaction_menu(self, identifier):
+        menu = QMenu(self)
+        edit = menu.addAction("Editar imagen y posición")
+        link = menu.addAction("Activar con una expresión")
+        selected = menu.exec(self.cursor().pos())
+        if selected == edit:
+            self.edit_reaction(identifier)
+        elif selected == link:
+            self.open_face_setup()
+            self.face_setup.saved.setCurrentIndex(0)
+            self.face_setup.overlay.setCurrentIndex(self.face_setup.overlay.findData(identifier))
 
     def open_output(self):
         self.output.configure(self.borderless.isChecked(), self.fullscreen.isChecked())
@@ -498,6 +528,8 @@ class MainWindow(QMainWindow):
                 clean, debug, status = packet
                 if self.face_setup:
                     self.face_setup.update_frame(clean, status)
+                if self.reaction_editor and status.get("preview_frame") is not None:
+                    self.reaction_editor.update_frame(status["preview_frame"], status)
                 self.preview.set_frame(debug)
                 self.output.set_frame(debug if self.output_debug.isChecked() else clean)
                 self.metrics.setText(f"{status['fps']:.1f} FPS  •  {status['size']}  •  {status['latency']:.0f} ms processing")
@@ -535,6 +567,8 @@ class MainWindow(QMainWindow):
         if not self.demo:
             self.save()
         self.output.close()
+        if self.reaction_editor:
+            self.reaction_editor.close()
         if self.face_setup:
             self.face_setup.close()
         self.timer.stop()

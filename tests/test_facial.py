@@ -136,6 +136,7 @@ def test_pipeline_setup_suppresses_automatic_trigger_then_rearms(qapp, monkeypat
     assets = AssetManager(ROOT / "assets/overlays", ROOT / "config/overlays.json")
     worker = Pipeline(DEFAULTS | dict(hands=False, confirmation=.1, cooldown=0), assets, {}, [rule()])
     worker.command("setup", True)
+    worker.command("preview", True)
     errors = []
     worker.error.connect(errors.append)
     worker.start()
@@ -156,9 +157,13 @@ def test_pipeline_setup_suppresses_automatic_trigger_then_rearms(qapp, monkeypat
         assert packet[2]["face_scores"]
         assert packet[2]["face_candidate"] is None
         assert packet[2]["setup_frame"].any() and not packet[0].any()
+        assert packet[2]["pose"] is not None
+        assert not packet[2]["preview_frame"].any()
+        worker.command("preview", False)
         worker.command("setup", False)
         packet = wait_for(lambda p: "approved" in p[2]["active"])
         assert packet[2]["face_confirmed"] == "smile"
+        assert packet[2]["preview_frame"] is None
         worker.command("clear")
         wait_for(lambda p: not p[2]["active"])
         time.sleep(.2)

@@ -40,14 +40,14 @@ class AssetManager:
             raise ValueError("Overlay IDs must be unique")
         self.images = {v.id: read_png(directory / v.file) for v in self.items}
 
-    def add(self, source, name, tracking="screen", duration=2.0):
+    def add(self, source, name, tracking="screen", duration=2.0, **placement):
         image = read_import_image(source)
         identifier = uuid.uuid4().hex
         item = Overlay.parse(dict(id=identifier, name=name, file=identifier + ".png",
                                  tracking_mode=tracking, duration=duration,
                                  scale={"eyes": 2.4, "face": 1.0, "screen": .5}.get(tracking, .5),
                                  anchor="center" if tracking != "screen" else "bottom",
-                                 rotation_mode="face" if tracking != "screen" else "none"))
+                                 rotation_mode="face" if tracking != "screen" else "none") | placement)
         destination = self.directory / item.file
         destination.write_bytes(cv2.imencode(".png", image)[1].tobytes())
         try:

@@ -6,7 +6,8 @@ import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
     QPushButton, QComboBox, QLineEdit, QDoubleSpinBox, QCheckBox, QProgressBar,
-    QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget, QWidget, QMessageBox, QScrollArea)
+    QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget, QWidget, QMessageBox, QScrollArea,
+    QGroupBox)
 from memecam.config.settings import ROOT, write_json
 from memecam.gestures.facial import learn_features, match_score, validate_rules
 from memecam.ui.widgets.video_widget import VideoWidget
@@ -26,8 +27,11 @@ class FaceSetup(QDialog):
         self.capture = None
         self.samples = []
         root = QVBoxLayout(self)
-        intro = QLabel("Configura tu expresión\n1. Captura tu rostro relajado.  2. Haz tu gesto y captúralo.  "
-                       "3. Elige una imagen, prueba y guarda.")
+        heading = QLabel("Una expresión. Tu reacción.")
+        heading.setObjectName("hero")
+        root.addWidget(heading)
+        intro = QLabel("Elige tu imagen → mira a la cámara con el rostro relajado → haz una expresión → guarda.\n"
+                       "Por ejemplo: sonríe para que aparezca tu meme. Puedes repetir cada captura.")
         intro.setWordWrap(True)
         root.addWidget(intro)
         body = QHBoxLayout()
@@ -35,8 +39,8 @@ class FaceSetup(QDialog):
         tabs = QTabWidget()
         self.video = VideoWidget("Inicia la cámara en la ventana principal.\nActiva Face tracking.")
         self.result = VideoWidget("Aquí verás la imagen siguiendo tu rostro al probarla.")
-        tabs.addTab(self.video, "Cámara + líneas de seguimiento")
-        tabs.addTab(self.result, "Resultado con imagen")
+        tabs.addTab(self.video, "Tu rostro")
+        tabs.addTab(self.result, "Probar reacción")
         left.addWidget(tabs, 1)
         self.state = QLabel("Esperando cámara…")
         self.state.setWordWrap(True)
@@ -46,6 +50,10 @@ class FaceSetup(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setMaximumHeight(215)
+        self.table.hide()
+        technical = QCheckBox("Mostrar datos de seguimiento")
+        technical.toggled.connect(self.table.setVisible)
+        left.addWidget(technical)
         left.addWidget(self.table)
         body.addLayout(left, 3)
         panel = QWidget()
@@ -53,22 +61,28 @@ class FaceSetup(QDialog):
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.saved = QComboBox()
         form.addRow("Gestos guardados", self.saved)
+        self.overlay = QComboBox()
+        form.addRow("1 · Tu imagen", self.overlay)
+        upload = QPushButton("+ Subir mi propia imagen…")
+        upload.clicked.connect(owner.add_overlay)
+        form.addRow(upload)
         self.name = QLineEdit()
         self.name.setPlaceholderText("Ej. sonrisa, guiño, boca abierta")
         form.addRow("Nombre", self.name)
         self.enabled = QCheckBox("Activación automática habilitada")
         self.enabled.setChecked(True)
         form.addRow(self.enabled)
-        self.neutral_button = QPushButton("1 · Capturar neutral (1 s)")
-        self.expression_button = QPushButton("2 · Capturar gesto (1 s)")
+        self.neutral_button = QPushButton("2 · Capturar rostro relajado (1 s)")
+        self.neutral_button.setObjectName("primary")
+        self.expression_button = QPushButton("3 · Capturar mi expresión (1 s)")
         self.neutral_button.clicked.connect(lambda: self.begin_capture("neutral"))
         self.expression_button.clicked.connect(lambda: self.begin_capture("expression"))
         form.addRow(self.neutral_button)
         form.addRow(self.expression_button)
         self.threshold = self.spin(.2, 1, .65, .05)
-        form.addRow("Umbral de activación", self.threshold)
-        help_text = QLabel("Menor umbral = más sensible. Mantén el gesto para confirmarlo; "
-                           "vuelve a neutral antes de repetir. Durante la configuración solo se activan imágenes por clic.")
+        form.addRow("Sensibilidad del gesto", self.threshold)
+        help_text = QLabel("Si no se activa, baja este valor. Si se activa demasiado, súbelo. "
+                           "Mientras configuras puedes probar imágenes con un clic; los gestos se activan al cerrar.")
         help_text.setWordWrap(True)
         form.addRow(help_text)
         self.match = QProgressBar()
@@ -77,29 +91,40 @@ class FaceSetup(QDialog):
         form.addRow(self.match)
         self.parameters = QLabel("Aún no hay gesto capturado.")
         self.parameters.setWordWrap(True)
+        self.parameters.hide()
+        technical.toggled.connect(self.parameters.setVisible)
         form.addRow(self.parameters)
-        self.overlay = QComboBox()
-        form.addRow("Imagen vinculada", self.overlay)
+        placement_group = QGroupBox("Ajustes de posición (opcional)")
+        placement_group.setCheckable(True)
+        placement_group.setChecked(False)
+        placement_layout = QVBoxLayout(placement_group)
+        placement_panel = QWidget()
+        placement_form = QFormLayout(placement_panel)
+        placement_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        placement_layout.addWidget(placement_panel)
+        placement_panel.hide()
+        placement_group.toggled.connect(placement_panel.setVisible)
         self.tracking = QComboBox()
         self.tracking.addItem("Rostro", "face")
         self.tracking.addItem("Ojos", "eyes")
         self.tracking.addItem("Pantalla", "screen")
-        form.addRow("Seguir", self.tracking)
+        placement_form.addRow("Seguir", self.tracking)
         self.scale = self.spin(.01, 5, 1, .05)
         self.x = self.spin(-2, 2, 0, .01)
         self.y = self.spin(-2, 2, 0, .01)
         self.duration = self.spin(0, 3600, 2, .5)
         self.duration.setSpecialValueText("Hasta quitarla")
-        form.addRow("Tamaño", self.scale)
-        form.addRow("Desplazamiento X", self.x)
-        form.addRow("Desplazamiento Y", self.y)
-        form.addRow("Duración (s)", self.duration)
+        placement_form.addRow("Tamaño", self.scale)
+        placement_form.addRow("Mover horizontalmente", self.x)
+        placement_form.addRow("Mover verticalmente", self.y)
+        placement_form.addRow("Duración (s)", self.duration)
         self.rotate = QCheckBox("Seguir inclinación de la cabeza")
-        form.addRow(self.rotate)
-        test = QPushButton("Aplicar posición y probar imagen")
+        placement_form.addRow(self.rotate)
+        form.addRow(placement_group)
+        test = QPushButton("Probar mi reacción")
         test.clicked.connect(self.test_overlay)
         form.addRow(test)
-        save = QPushButton("Guardar gesto y vincular imagen")
+        save = QPushButton("4 · Guardar reacción automática")
         save.setObjectName("primary")
         save.clicked.connect(self.save_rule)
         actions = QHBoxLayout()
@@ -178,7 +203,8 @@ class FaceSetup(QDialog):
 
     def begin_capture(self, kind):
         if not self.scores or time.monotonic() - self.last_frame > .5:
-            self.notice.setText("Necesitas un rostro visible y Face tracking activado para capturar.")
+            self.notice.setText("Enciende la cámara en la ventana principal y activa Face tracking en Ajustes. "
+                                "Mira al frente hasta que veas tu rostro en la vista previa.")
             return
         if kind == "expression" and self.neutral is None:
             self.notice.setText("Primero captura tu rostro neutral.")
@@ -188,6 +214,7 @@ class FaceSetup(QDialog):
         self.notice.setText("Mantén el rostro relajado…" if kind == "neutral" else "Mantén tu gesto…")
 
     def show_features(self):
+        self.expression_button.setEnabled(self.neutral is not None)
         self.parameters.setText("Parámetros: " + ", ".join(self.features) if self.features else
                                 "Aún no hay gesto capturado.")
 

@@ -33,6 +33,7 @@ class Pipeline(QThread):
         self.mappings = mappings
         self.facial_rules = facial_rules or []
         self.setup_open = False
+        self.preview_open = False
         self.commands = queue.Queue()
         self.lock = threading.Lock()
         self.packet = None
@@ -118,6 +119,8 @@ class Pipeline(QThread):
                     elif command[0] == "setup":
                         self.setup_open = command[1]
                         facial = GestureEngine(s["confirmation"], s["release"], s["cooldown"])
+                    elif command[0] == "preview":
+                        self.preview_open = command[1]
                     elif command[0] == "trigger":
                         self.engine.trigger(command[1], time.monotonic(), toggle=True)
                     elif command[0] == "clear":
@@ -169,6 +172,7 @@ class Pipeline(QThread):
                         if max(edge.start, edge.end) < len(points):
                             cv2.line(setup_frame, tuple(points[edge.start]), tuple(points[edge.end]),
                                      (90, 190, 110), 1, cv2.LINE_AA)
+                preview_frame = frame.copy() if self.preview_open else None
                 clean = self.engine.render(frame, pose, now)
                 done = time.monotonic()
                 instant = 1 / max(done - last_processed, .001)
@@ -199,4 +203,4 @@ class Pipeline(QThread):
                                    size=f"{w} × {h}", active=list(self.engine.active),
                                    face_scores=scores, face_candidate=face_candidate,
                                    face_progress=facial.progress, face_confirmed=facial.confirmed,
-                                   setup_frame=setup_frame))
+                                   setup_frame=setup_frame, pose=pose, preview_frame=preview_frame))

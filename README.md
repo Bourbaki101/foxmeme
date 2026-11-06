@@ -2,6 +2,8 @@
 
 MemeCam is a Windows desktop webcam effects studio. Hand gestures and calibrated facial expressions trigger your images; face landmarks keep them aligned to your face or eyes. Video processing uses local MediaPipe Tasks models. OBS supplies the virtual camera.
 
+**¿Quieres el EXE y un icono en el escritorio?** Sigue [Build and test a Windows executable](#build-and-test-a-windows-executable), desde descargar el repo hasta crear el acceso directo. GitHub contiene el código fuente; debes generar el EXE con esos pasos.
+
 ```text
 Physical webcam → MemeCam Output → OBS Window Capture
                                       ↓
@@ -10,7 +12,7 @@ Physical webcam → MemeCam Output → OBS Window Capture
 
 ## Requirements and installation
 
-Windows 10/11 x64, Python **3.11 or 3.12** x64, a physical webcam, and OBS Studio for virtual-camera output. Python 3.13+ is excluded because the pinned MediaPipe wheel does not support it. Use a writable source checkout; configuration and assets live beside the source. Packaging is intentionally deferred.
+Windows 10/11 x64, Python **3.11 or 3.12** x64, a physical webcam, and OBS Studio for virtual-camera output. Python 3.13+ is excluded because the pinned MediaPipe wheel does not support it. Use a writable source checkout; configuration and assets live beside the source. For an experimental portable Windows executable, see the build steps below.
 
 Run PowerShell in the project directory:
 
@@ -29,9 +31,9 @@ The dependency deliberately pins MediaPipe **0.10.21** while using its Tasks API
 
 For the exact tested Windows/Python 3.12 dependency set, install `requirements-lock.txt` before `pip install -e ".[dev]"`. Only the contrib OpenCV distribution is used; it supplies the normal OpenCV APIs too.
 
-This checkout has an installed `.venv` and downloaded models. Start it with:
+After installation and the model download, start it with:
 
-On Windows, double-click **MemeCam** on the desktop or `MemeCam.lnk` in this folder to open the app without a console. Keep the project folder and its `.venv` in place. To recreate the desktop shortcut after moving the project, run `powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1` from the new location.
+On Windows, run `powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1` to create a **MemeCam** shortcut on the desktop, then double-click it to open the app without a console. This source-mode shortcut uses `.venv\Scripts\pythonw.exe`. Shortcuts are local and are not included in a GitHub download. Keep the project folder and its `.venv` in place; recreate the shortcut after moving the project. For a shortcut that opens the compiled EXE instead, use step 5 below.
 
 ```powershell
 .\launch.ps1
@@ -39,9 +41,110 @@ On Windows, double-click **MemeCam** on the desktop or `MemeCam.lnk` in this fol
 .\.venv\Scripts\python.exe -m memecam
 ```
 
+## Build and test a Windows executable
+
+This is an **experimental PyInstaller recipe**, not a validated release build or installer. The source application has automated tests; the frozen executable still needs the checks below on the target machine. Build on Windows x64 with Python **3.12 x64**. Internet is needed to install dependencies and download the models; the completed bundle is intended to run offline.
+
+### 1. Download a clean copy
+
+In PowerShell, open a writable folder and run (Git must be installed):
+
+```powershell
+git clone https://github.com/Bourbaki101/foxmeme.git
+cd foxmeme
+```
+
+Alternatively, use **Code → Download ZIP** on GitHub, extract it, and open PowerShell inside the extracted folder containing `pyproject.toml`. Run every subsequent command from that folder. A fresh download contains neither `.venv` nor the `.task` models.
+
+### 2. Install and check the source application
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\.venv\Scripts\python.exe -m pip install "pyinstaller>=6,<7"
+.\.venv\Scripts\python.exe scripts\create_assets.py
+.\.venv\Scripts\python.exe scripts\setup_models.py
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m pytest -q --basetemp=.tmp\pytest
+.\.venv\Scripts\python.exe scripts\verify_vision.py
+.\.venv\Scripts\python.exe -m memecam --demo --smoke-test
+```
+
+Stop and resolve any failed command before continuing. `verify_vision.py` checks real model loading and inference; the demo checks UI startup without using the webcam. The commands above resolve dependencies from `pyproject.toml`; `requirements-lock.txt` records the original development environment and is optional for this recipe.
+
+### 3. Generate the portable folder and EXE
+
+Run this PowerShell command; each backtick must be the last character on its line:
+
+```powershell
+.\.venv\Scripts\python.exe -m PyInstaller `
+  --noconfirm --clean --onedir --windowed `
+  --name MemeCam --icon assets\memecam.ico `
+  --contents-directory . `
+  --distpath .tmp\dist --workpath .tmp\build --specpath .tmp `
+  --paths . `
+  --collect-all mediapipe `
+  --collect-all cv2_enumerate_cameras `
+  --add-data "assets:assets" `
+  --add-data "config/overlays.json:config" `
+  --add-data "config/gestures.json:config" `
+  --add-data "config/settings.example.json:config" `
+  memecam\__main__.py
+```
+
+The executable is **`.tmp\dist\MemeCam\MemeCam.exe`**. Keep the **entire `MemeCam` folder**, including its DLLs, Qt plugins, `assets` and `config`; copying only the EXE will not work. Build outputs stay under the already ignored `.tmp/` directory. Rebuilding replaces the output folder, so back up any settings or imported images stored there first.
+
+`--contents-directory .` keeps resources beside the EXE, matching the application's existing resource paths. Use this `--onedir` layout: a `--onefile` build would need changes to resource and persistence paths before it can preserve user edits reliably. The flags are documented in the [PyInstaller usage guide](https://pyinstaller.org/en/stable/usage.html).
+
+Build from a clean download: the command includes all of `assets`, including downloaded models and any images you have added there. Only the three listed default configuration files are bundled; local settings and facial calibrations are not copied.
+
+### 4. Test and share
+
+First check the frozen UI from PowerShell, waiting for the process and checking its exit code:
+
+```powershell
+$demoProcess = Start-Process -FilePath .\.tmp\dist\MemeCam\MemeCam.exe -ArgumentList '--demo', '--smoke-test' -Wait -PassThru
+$demoProcess.ExitCode
+```
+
+Expect a synthetic preview to open, close automatically after about two seconds, and return **0**. This does not test camera access or frozen model loading. Then double-click `.tmp\dist\MemeCam\MemeCam.exe` and:
+
+1. Select your physical camera in **Ajustes**, enable hand and face detection, and click **Encender cámara**. Confirm live video and no model/DLL errors.
+2. Use **+ Subir mi imagen**, choose a PNG/JPG/WebP, adjust its placement and click **3 · Guardar y usar**. Then try **Guardar y activar con una expresión →**. Hold a thumbs-up gesture and a peace sign to check the built-in effects too.
+3. Close and reopen the EXE to confirm settings, imported images, and saved facial gestures persist.
+4. Open **Salida OBS ↗** and follow the OBS instructions below if you want to test a virtual camera. Complete `docs/MANUAL_TESTS.md` for a fuller check.
+5. Copy the entire `MemeCam` folder to another writable location, outside the checkout, and repeat these checks. Test on a Windows x64 machine without Python before treating the bundle as distributable.
+
+To share it, ZIP the whole `MemeCam` folder. Recipients extract the ZIP into a writable folder and open `MemeCam.exe`; the bundle is intended to include Python and its dependencies. Keep it out of protected locations such as `Program Files`: the app writes `config`, `assets/overlays`, and `logs` beside the EXE. OBS remains a separate installation for virtual-camera use.
+
+If startup fails, inspect `.tmp\dist\MemeCam\logs\memecam.log`. If it fails before logging starts, rebuild with **`--console` instead of `--windowed`**, run the EXE from PowerShell, and inspect the traceback. Check that both `assets/models/hand_landmarker.task` and `assets/models/face_landmarker.task` are in the bundle. For missing runtime DLLs, install the Microsoft Visual C++ x64 runtime. A successful source run alone does not establish that the frozen build works.
+
+### 5. EXE con icono en el escritorio
+
+El comando de compilación ya incorpora `assets/memecam.ico` al EXE. El acceso directo usará ese mismo icono y abrirá MemeCam sin una consola.
+
+Primero copia **toda** la carpeta `.tmp\dist\MemeCam` a una ubicación permanente donde puedas escribir, por ejemplo `C:\Users\TU_USUARIO\Apps\MemeCam`. Puedes hacerlo con el Explorador de archivos. Conserva dentro el EXE, las DLL, `assets` y `config`. Después, desde PowerShell en la carpeta del repo, ejecuta este comando **sustituyendo la ruta por la ubicación real de tu EXE**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1 -ExecutablePath "C:\Users\TU_USUARIO\Apps\MemeCam\MemeCam.exe"
+```
+
+El script crea **MemeCam.lnk** en tu escritorio de Windows, también si está redirigido a OneDrive. Si ya existe un acceso directo llamado MemeCam, lo actualiza para que abra ese EXE. Haz doble clic en el icono **MemeCam** y prueba **+ Subir mi imagen**. El acceso directo del EXE no depende de la `.venv` del repo.
+
+Para una prueba rápida, puedes apuntar directamente al resultado de la compilación:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\create_shortcut.ps1 -ExecutablePath ".\.tmp\dist\MemeCam\MemeCam.exe"
+```
+
+En ese caso debes conservar esa carpeta `.tmp\dist\MemeCam`. Si después mueves la app, vuelve a ejecutar el script con la nueva ruta. Si compartes un ZIP, cada persona debe extraer la carpeta completa y crear su propio acceso directo; los archivos `.lnk` de otra computadora contienen rutas que pueden no existir en la suya.
+
+Sin el script también puedes hacer clic derecho en `MemeCam.exe` → **Mostrar más opciones** → **Enviar a** → **Escritorio (crear acceso directo)**.
+
 ## Camera and controls
 
-Open **Settings** in the right panel to select a webcam, resolution, and requested FPS, then click **Start Camera** in the header. The **Gestures** tab shows the hand gesture guide; recognition details and output options are grouped under **Settings**. The default is 1280×720 at 30 FPS. Devices can negotiate a different format; the footer displays actual frame dimensions and measured processing FPS. Stop before changing cameras or resolution. Refresh discovers newly connected cameras. Capture tries DirectShow first, then Media Foundation.
+Open **Ajustes** in the right panel to select a webcam, resolution, and requested FPS, then click **Encender cámara** in the header. **Mi estudio** offers image creation and the hand gesture guide; recognition details and output options are grouped under **Ajustes**. The default is 1280×720 at 30 FPS. Devices can negotiate a different format; the footer displays actual frame dimensions and measured processing FPS. Stop before changing cameras or resolution. Refresh discovers newly connected cameras. Capture tries DirectShow first, then Media Foundation.
 
 Hand detection, face tracking, mirroring, and preview debug can be changed live. Debug draws hand connections, face landmark points, candidate, confirmation progress, last confirmed gesture, and measured FPS. The Settings detection section shows the candidate and progress even when debug is off. With both detectors disabled, camera and manual library triggers still work.
 
@@ -66,9 +169,19 @@ Settings persist in `config/settings.json` on changes, camera start, and close. 
 
 ## Overlay library
 
+### Tu primera reacción con tu propia imagen
+
+1. Haz clic en **+ Subir mi imagen**, en la parte superior de la app. También puedes usar **+ Crear mi reacción** en **Mi estudio**.
+2. En el editor, pulsa **1 · Subir mi imagen…** y elige un PNG, JPG o WebP de tu computadora. Un PNG transparente conserva el recorte; una foto JPG conserva su fondo.
+3. Elige **Sobre mi rostro**, **Sobre mis ojos · gafas**, **Encima de mi cabeza** o **Fija en la pantalla**. Ajusta tamaño y posición viendo el resultado. Sin cámara aparece una vista de ejemplo claramente identificada; usa **Encender cámara para probar en mi rostro** para verte en vivo. Los cambios del editor aún no aparecen en OBS.
+4. Pulsa **3 · Guardar y usar**. La reacción aparece en **Tu biblioteca** y se muestra si la cámara está encendida. Por defecto permanece hasta que vuelvas a hacer clic en su tarjeta o pulses **Quitar todas**; también puedes elegir una duración en el editor.
+5. Usa **Editar / vincular** debajo de cualquier tarjeta para cambiar nombre, tamaño, posición o duración. Para activarla con una sonrisa u otra expresión, elige **Guardar y activar con una expresión →**: la imagen queda seleccionada en el asistente. Captura tu rostro relajado, captura la expresión y pulsa **4 · Guardar reacción automática**. Cierra ese asistente para reanudar la activación automática.
+
+No necesitas configurar expresiones para usar tu imagen con un clic. Cancelar el editor no importa la imagen ni cambia la biblioteca. Los ajustes se guardan localmente; editar una reacción existente conserva sus vínculos a gestos.
+
 Four original transparent placeholder PNGs are included in `assets/overlays/`. The asset generator only creates missing built-ins, so it never replaces your edits.
 
-Click **+ Add effect**, select a PNG, JPG or WebP image, set a name, tracking mode (`screen`, `face`, `eyes`), and duration. New imports default to face tracking. Zero duration means persistent. The file is converted to an RGBA PNG in the library with a unique ID, shown with a thumbnail, and retained across launches. Existing transparency is preserved; opaque images remain opaque. Click its library tile to trigger or toggle it independently of gesture recognition; **Clear all** removes all overlays. Very large images should be resized before import (8192-pixel maximum per dimension).
+Use **+ Subir mi imagen** to open the visual editor. New imports default to face tracking and remain visible until toggled off (zero duration). The file is converted to an RGBA PNG in the library with a unique ID, shown with a thumbnail, and retained across launches. Existing transparency is preserved; opaque images remain opaque. Click its library tile to trigger or toggle it independently of gesture recognition; **Quitar todas** removes all active overlays. Very large images should be resized before import (8192-pixel maximum per dimension).
 
 Metadata is in `config/overlays.json`. Supported properties are `id`, `name`, `file`, `type`, `anchor`, `duration`, `scale`, `offset_x`, `offset_y`, `rotation_mode`, and `tracking_mode`. Anchors are `top`, `center`, `bottom` for screen effects. Screen scale is a fraction of frame width; eyes scale multiplies eye distance; face scale multiplies face width. Offsets are fractions of frame width/height. `rotation_mode: face` follows head tilt; `none` stays upright. Tracking centers take precedence over screen anchors for attached effects. PNG is the only current renderer; the metadata type and compositor boundary allow future animation decoders.
 
@@ -76,14 +189,14 @@ Hand gesture behavior lives in `config/gestures.json`; replace an overlay ID the
 
 ## Facial expression setup
 
-Start the camera, enable **Face tracking**, and click **Configure facial gestures ↗** below the right panel. The separate, resizable window shares the running camera; it does not open another capture device. The tracking tab shows a live face mesh even when preview debug is off. The result tab shows your composited output. Setup lines never enter the OBS output.
+Start the camera with **Encender cámara**, enable **Face tracking** under **Ajustes**, and click **Activar con mi expresión →** below the right panel, or use the expression action in the image editor. The separate, resizable window shares the running camera; it does not open another capture device. The **Tu rostro** tab shows a live face mesh even when preview debug is off. **Probar reacción** shows your composited output. Setup lines never enter the OBS output. Tracking parameters are hidden under **Mostrar datos de seguimiento**, and placement controls under **Ajustes de posición (opcional)**.
 
-1. Import your image using **+ Add effect** in the main window. Main-window controls and library tiles remain available while setup is open.
+1. Import your image using **+ Subir mi imagen** in the main window or **+ Subir mi propia imagen…** in the expression assistant. Main-window controls and library tiles remain available while setup is open.
 2. Choose **+ Nuevo gesto** and enter a name, such as smile, wink, raised eyebrows, or open mouth.
-3. Relax your face and click **Capturar neutral**; hold still for one second. Make your expression, click **Capturar gesto**, and hold it for one second. Each capture uses the median of at least five live samples. Face loss cancels a capture.
-4. Watch the facial parameters and match meter as you repeat the expression. Lower **Umbral de activación** for greater sensitivity; raise it to require a stronger expression. The meter previews the selected unsaved template; automatic recognition uses saved values.
-5. Choose **Imagen vinculada**, then adjust face/eye/screen tracking, size, X/Y position, duration, and head rotation. **Aplicar posición y probar imagen** saves that image's placement and triggers it manually; view the result in the result tab. Placement changes apply everywhere that image is used.
-6. Click **Guardar gesto y vincular imagen**, then close setup to resume automatic triggers. Both hand and facial automatic effects are paused while setup is open; manual clicks remain enabled. Expressions use the same hold, release and cooldown settings as hand gestures, with independent timing. A held expression fires once; temporary effects expire and persistent effects remain until cleared or toggled manually.
+3. Relax your face and click **2 · Capturar rostro relajado (1 s)**; hold still for one second. Make your expression, click **3 · Capturar mi expresión (1 s)**, and hold it for one second. Each capture uses the median of at least five live samples. Face loss cancels a capture.
+4. Watch the match meter as you repeat the expression. Lower **Sensibilidad del gesto** for greater sensitivity; raise it to require a stronger expression. The meter previews the selected unsaved template; automatic recognition uses saved values.
+5. Choose **1 · Tu imagen**. Optional placement controls allow face/eye/screen tracking, size, X/Y position, duration, and head rotation. **Probar mi reacción** saves that image's placement and triggers it manually; view it under **Probar reacción**. Placement changes apply everywhere that image is used.
+6. Click **4 · Guardar reacción automática**, then close setup to resume automatic triggers. Both hand and facial automatic effects are paused while setup is open; manual clicks remain enabled. Expressions use the same hold, release and cooldown settings as hand gestures, with independent timing. A held expression fires once; temporary effects expire and persistent effects remain until cleared or toggled manually.
 
 Saved expressions can be selected, renamed, disabled, remapped, recalibrated or deleted in this window without restarting. Rules live in `config/facial_gestures.json`, created on the first save. Invalid rules produce a startup warning and disable facial rules until repaired or replaced through setup. Rules contain numeric blendshape samples and image IDs; no photos or video are stored. This feature tracks facial movement for effects rather than identifying people.
 
